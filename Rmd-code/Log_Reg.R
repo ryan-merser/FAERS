@@ -1,0 +1,94 @@
+library(readr)
+
+#This assumes that the file is in the working directory
+merged_data = read_csv("~/Downloads/merged_data.csv")
+
+#This is used to identify which variables have only missing data
+apply(merged_data,2,function(x){table(is.na(x))})
+
+#The following variables have only missing data:
+#mfr_dt,auth_num,mfr_num,lit_ref,age_grp,cum_dose_chr,cum_dose_unit,drug_rec_act
+
+#This is used to identify the column numbers for the variables with only missing data
+colnames(merged_data)
+
+#This drops the variables with only missing data
+merged_data = merged_data[,-c(6,10,11,13,16,33,34,48)]
+
+#This is used to identify the column numbers for the remaining variables we won't be using
+colnames(merged_data)
+
+#This drops the remaining variables we won't be using
+merged_data = merged_data[,-c(1:7,13,16,21,32,37,42)]
+
+#This identifies the rows without any missing data
+#The problem is every row has missing data
+nonmissing.flag = apply(merged_data,1,function(x){ifelse(sum(is.na(x)) == 0,1,0)})
+
+missing_prop = apply(merged_data,2,function(x){table(is.na(x))[2]/344570})
+missing_prop 
+
+#This drops the variables with more missing data than either outcome variable (i.e. more #than dechal)
+merged_data = merged_data[,-c(17,20:25,32,33)]
+
+#This keeps the rows with values "Y" or "N" for rechal or dechal
+rechal.flag = which(merged_data$rechal[1:344570] == "Y")
+rechal.flag2 = which(merged_data$rechal[1:344570] == "N")
+dechal.flag = which(merged_data$dechal[1:344570] == "Y")
+dechal.flag2 = which(merged_data$dechal[1:344570] == "N")
+observed.piece = union(rechal.flag,rechal.flag2)
+observed.piece2 = union(dechal.flag,dechal.flag2)
+observed.flag = intersect(observed.piece,observed.piece2)
+
+#This identifies the categorical variables with only one unique observed value or more #than 20 unique observed values
+apply(merged_data[observed.flag,-c(3,6)],2,function(x){length(table(x))})
+#The preceding shows that rept_cod, mfr_sndr, and val_vbm have only one unique observed value
+#The preceding also shows that drugname, prod_ai,indi_pt,pt,start_dt, and end_dt have #more than 20 unique observed values
+
+#The following code runs but the models don't converge
+dechal.logit = glm(as.factor(dechal) ~  age + as.factor(age_cod) + as.factor(sex) + wt + as.factor(wt_cod) + as.factor(to_mfr) + as.factor(occp_cod) + as.factor(reporter_country) + as.factor(occr_country) + as.factor(role_cod) + as.factor(route) + as.factor(outc_cod)  ,family = binomial,data = merged_data[observed.flag,],control = list(maxit = 100))
+summary(dechal.logit)
+
+rechal.logit = glm(as.factor(rechal) ~  age + as.factor(age_cod) + as.factor(sex) + wt + as.factor(wt_cod) + as.factor(to_mfr) + as.factor(occp_cod) + as.factor(reporter_country) + as.factor(occr_country) + as.factor(role_cod) + as.factor(route) + as.factor(outc_cod)  ,family = binomial,data = merged_data[observed.flag,],control = list(maxit = 100))
+summary(rechal.logit)
+
+# Correct code to remove variable
+
+library(tree)
+set.seed(121)
+dechal.tree <- tree(as.factor(dechal) ~ age + as.factor(age_cod) + as.factor(sex) + wt + as.factor(wt_cod) + as.factor(to_mfr) + as.factor(occp_cod) + as.factor(reporter_country) + as.factor(occr_country) + as.factor(role_cod) + as.factor(route) + as.factor(outc_cod), data = merged_data)
+summary(dechal.tree)
+
+library(cvms)
+dechal.cvtree <- cv.tree(dechal.tree)
+dechal.cvtree
+
+dechal.error <- which.min(dechal.cvtree$dev)
+dechal.optcvtree <- dechal.cvtree$size[dechal.error]
+dechal.prunedtree <- prune.tree(dechal.tree, best = dechal.optcvtree)
+summary(dechal.prunedtree)
+
+
+plot(dechal.tree)
+text(dechal.tree, pretty = 0)
+
+
+#rechal tree
+set.seed(121)
+rechal.tree <- tree(as.factor(rechal) ~ age + as.factor(age_cod) + as.factor(sex) + wt + as.factor(wt_cod) + as.factor(to_mfr) + as.factor(occp_cod) + as.factor(reporter_country) + as.factor(occr_country) + as.factor(role_cod) + as.factor(route) + as.factor(outc_cod), data = merged_data)
+summary(rechal.tree)
+
+library(cvms)
+rechal.cvtree <- cv.tree(rechal.tree)
+rechal.cvtree
+
+rechal.error <- which.min(rechal.cvtree$dev)
+rechal.optcvtree <- rechal.cvtree$size[rechal.error]
+rechal.prunedtree <- prune.tree(rechal.tree, best = rechal.optcvtree)
+summary(rechal.prunedtree)
+
+plot(rechal.tree)
+text(rechal.tree, pretty = 0)
+
+
+
